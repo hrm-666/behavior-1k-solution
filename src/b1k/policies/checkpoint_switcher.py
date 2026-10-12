@@ -6,6 +6,7 @@ Was used in the final submission to allow changing checkpoints based on task_id 
 import json
 import logging
 import gc
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from openpi.policies import policy as _policy
@@ -38,7 +39,7 @@ class CheckpointSwitcher:
         if not config_path:
             raise ValueError("config_path is required for checkpoint switching")
         
-        self.config_path = config_path
+        self.config_path = Path(config_path).expanduser().resolve()
         self.training_config = training_config
         self.sample_kwargs = sample_kwargs or {}
         
@@ -61,7 +62,7 @@ class CheckpointSwitcher:
     def _load_mapping(self):
         """Load and validate the checkpoint→tasks mapping."""
         try:
-            with open(self.config_path, 'r') as f:
+            with self.config_path.open("r", encoding="utf-8") as f:
                 config = json.load(f)
         except FileNotFoundError:
             logging.error(f"Checkpoint mapping file not found: {self.config_path}")
@@ -81,7 +82,10 @@ class CheckpointSwitcher:
             if "tasks" not in checkpoint_info:
                 raise ValueError(f"Checkpoint '{checkpoint_name}' missing 'tasks' field")
             
-            checkpoint_path = checkpoint_info["path"]
+            checkpoint_path = Path(checkpoint_info["path"]).expanduser()
+            if not checkpoint_path.is_absolute():
+                checkpoint_path = self.config_path.parent / checkpoint_path
+            checkpoint_path = checkpoint_path.resolve()
             tasks = checkpoint_info["tasks"]
             
             # Validate tasks are unique
@@ -90,7 +94,7 @@ class CheckpointSwitcher:
                     raise ValueError(f"Task {task_id} is assigned to multiple checkpoints")
                 seen_tasks.add(task_id)
             
-            self.checkpoint_paths[checkpoint_name] = checkpoint_path
+            self.checkpoint_paths[checkpoint_name] = str(checkpoint_path)
             for task_id in tasks:
                 self.task_to_checkpoint[task_id] = checkpoint_name
             
