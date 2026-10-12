@@ -8,10 +8,12 @@ from collections import deque
 
 from openpi_client.base_policy import BasePolicy
 from openpi_client.image_tools import resize_with_pad
-from b1k.policies.b1k_policy import extract_state_from_proprio
 from b1k.models.pi_behavior_config import TASK_NUM_STAGES
 from b1k.shared.correction_rules import apply_correction_rules, check_gripper_variation
-from omnigibson.learning.utils.eval_utils import PROPRIOCEPTION_INDICES
+from b1k.shared.eval_compat import CAMERA_KEYS
+from b1k.shared.eval_compat import PROPRIO_KEY
+from b1k.shared.eval_compat import adapt_single_env_observation
+from b1k.shared.eval_compat import extract_state_from_proprio
 
 logger = logging.getLogger(__name__)
 
@@ -104,11 +106,11 @@ class B1KPolicyWrapper():
 
     def process_obs(self, obs: dict) -> dict:
         """Process observation to match model input format."""
-        prop_state = obs["robot_r1::proprio"]
+        prop_state = obs[PROPRIO_KEY]
         
-        head_original = obs["robot_r1::robot_r1:zed_link:Camera:0::rgb"][..., :3]
-        left_original = obs["robot_r1::robot_r1:left_realsense_link:Camera:0::rgb"][..., :3]
-        right_original = obs["robot_r1::robot_r1:right_realsense_link:Camera:0::rgb"][..., :3]
+        head_original = obs[CAMERA_KEYS[0]][..., :3]
+        left_original = obs[CAMERA_KEYS[1]][..., :3]
+        right_original = obs[CAMERA_KEYS[2]][..., :3]
         
         # Resize images
         head_resized = resize_with_pad(head_original, RESIZE_SIZE, RESIZE_SIZE)
@@ -189,13 +191,19 @@ class B1KPolicyWrapper():
 
     def act(self, obs: dict) -> torch.Tensor:
         """Main action function."""
+        # The current evaluator always sends a leading environment dimension.
+        # Remove it for the original champion policy and reject num_envs > 1.
+        obs = adapt_single_env_observation(obs)
         
         # Extract task_id from observations
         if "task_id" in obs:
-            new_task_id = int(obs["task_id"][0])
+            task_id_values = np.asarray(obs["task_id"]).reshape(-1)
+            if task_id_values.size != 1:
+                raise ValueError(f"Expected exactly one task ID, got shape {task_id_values.shape}")
+            new_task_id = int(task_id_values[0])
             self._handle_task_change(new_task_id)
         
-        raw_state = obs["robot_r1::proprio"]
+        raw_state = obs[PROPRIO_KEY]
         current_state = extract_state_from_proprio(raw_state)
         
         # Check if we need new actions
@@ -304,4 +312,3 @@ class B1KPolicyWrapper():
             action_tensor = action_tensor[:23]
         
         return action_tensor
-

@@ -12,15 +12,13 @@ import tyro
 os.environ.setdefault('XLA_PYTHON_CLIENT_MEM_FRACTION', '0.5')  # Use 50% of GPU memory
 os.environ.setdefault('XLA_PYTHON_CLIENT_ALLOCATOR', 'platform')  # Platform allocator
 
-from omnigibson.learning.utils.network_utils import WebsocketPolicyServer
-from omnigibson.learning.datas import BehaviorLerobotDatasetMetadata
-
 from openpi.policies import policy as _policy
 
 # Import B1K-specific modules
 from b1k.policies import policy_config as _policy_config  # Use our custom policy_config
 from b1k.policies.checkpoint_switcher import CheckpointSwitcher
 from b1k.shared.eval_b1k_wrapper import B1KPolicyWrapper, B1KWrapperConfig
+from b1k.shared.websocket_policy_server import WebsocketPolicyServer
 from b1k.training import config as _config
 
 
@@ -128,6 +126,20 @@ def main(args: Args) -> None:
                 training_config=config,
                 sample_kwargs=sample_kwargs
             )
+            # ``create_policy`` already loaded the checkpoint passed on the
+            # command line. If that directory also appears in the mapping,
+            # seed the switcher with the existing policy instead of loading a
+            # second copy on the first request for that checkpoint.
+            initial_checkpoint_dir = pathlib.Path(args.policy.dir).expanduser().resolve()
+            for checkpoint_name, checkpoint_path in checkpoint_switcher.checkpoint_paths.items():
+                if pathlib.Path(checkpoint_path).expanduser().resolve() == initial_checkpoint_dir:
+                    checkpoint_switcher.current_policy = policy
+                    checkpoint_switcher.current_checkpoint_name = checkpoint_name
+                    logging.info(
+                        "Registered initially loaded policy as checkpoint '%s'",
+                        checkpoint_name,
+                    )
+                    break
             logging.info("Checkpoint switcher initialized - will switch checkpoints based on task_id")
         except Exception as e:
             logging.error(f"Failed to initialize checkpoint switcher: {e}")

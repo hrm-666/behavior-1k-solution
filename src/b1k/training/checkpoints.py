@@ -10,7 +10,7 @@ import concurrent.futures as futures
 import dataclasses
 import logging
 import shutil
-from typing import Protocol
+from typing import Protocol, TYPE_CHECKING
 
 from etils import epath
 import flax.traverse_util
@@ -21,8 +21,10 @@ import orbax.checkpoint as ocp
 import orbax.checkpoint.future as future
 
 from openpi.shared import array_typing as at
-import openpi.training.data_loader as _data_loader
 import openpi.training.utils as training_utils
+
+if TYPE_CHECKING:
+    import openpi.training.data_loader as _data_loader
 
 # Use our custom normalize (has per_timestamp fields and can save/load them)
 from b1k.shared import normalize as _normalize
