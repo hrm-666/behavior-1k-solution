@@ -81,6 +81,21 @@ class B1KPolicyWrapper():
         self.current_stage = 0
         self.prediction_history.clear()
         logger.info(f"Policy reset - Task ID: {self.task_id}, Action horizon: {self.action_horizon}")
+
+    def invalidate_action_cache(self):
+        """Replan after external motion without restarting the task or stage.
+
+        Cached actions and rolling-inpainting seeds describe the pre-motion
+        observation. Task/stage state, voting history, counters and the base
+        policy (including its RNG) deliberately remain untouched.
+        """
+        self.last_actions = None
+        self.action_index = 0
+        self.next_initial_actions = None
+        logger.info(
+            "Action cache invalidated - Task ID: %s, preserved stage: %s, step: %s",
+            self.task_id, self.current_stage, self.step_count,
+        )
     
     def _handle_task_change(self, new_task_id):
         """Handle task ID change by switching checkpoint and resetting state."""

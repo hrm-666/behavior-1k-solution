@@ -40,7 +40,12 @@ class WebsocketPolicyServer:
         self._policy = policy
         self._host = host
         self._port = port
-        self._metadata = metadata or {}
+        self._metadata = deepcopy(metadata or {})
+        capabilities = dict(self._metadata.get("emerge_capabilities") or {})
+        capabilities["invalidate_action_cache"] = callable(
+            getattr(policy, "invalidate_action_cache", None)
+        )
+        self._metadata["emerge_capabilities"] = capabilities
 
     def serve_forever(self) -> None:
         asyncio.run(self.run())
@@ -67,6 +72,17 @@ class WebsocketPolicyServer:
             try:
                 start_time = time.monotonic()
                 request = msgpack_numpy.unpackb(await websocket.recv(), strict_map_key=False)
+
+                # Like reset, this control message has no response. The next
+                # observation still receives exactly one action response.
+                if "invalidate_action_cache" in request:
+                    if set(request) != {"invalidate_action_cache"} or request["invalidate_action_cache"] is not True:
+                        raise ValueError("invalidate_action_cache requires an isolated true control flag")
+                    invalidate = getattr(self._policy, "invalidate_action_cache", None)
+                    if not callable(invalidate):
+                        raise RuntimeError("Policy does not support invalidate_action_cache; refusing full reset")
+                    invalidate()
+                    continue
 
                 # The evaluator does not wait for a response to reset messages.
                 if "reset" in request:
